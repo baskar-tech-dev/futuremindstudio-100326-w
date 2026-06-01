@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
+  // Enable premium CSS-based scroll reveal triggers safely
+  document.body.classList.add('js-enabled');
   
   /* ==========================================================================
      1. CUSTOM INTERACTIVE CURSOR WITH LERP LAGGING
@@ -26,6 +28,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.style.setProperty('--mouse-y', `${mouseY}px`);
   });
 
+  // Map touch coordinates to mouseX and mouseY for mobile interactions
+  const handleTouch = (e) => {
+    if (e.touches && e.touches.length > 0) {
+      mouseX = e.touches[0].clientX;
+      mouseY = e.touches[0].clientY;
+      
+      document.body.style.setProperty('--mouse-x', `${mouseX}px`);
+      document.body.style.setProperty('--mouse-y', `${mouseY}px`);
+    }
+  };
+  document.addEventListener('touchstart', handleTouch, { passive: true });
+  document.addEventListener('touchmove', handleTouch, { passive: true });
+
   // Smoothly interpolate the outer cursor ring position
   function updateCursor() {
     ringX += (mouseX - ringX) * lerpFactor;
@@ -33,6 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     cursorRing.style.left = `${ringX}px`;
     cursorRing.style.top = `${ringY}px`;
+    
+    if (typeof updateCardPhysics === 'function') {
+      updateCardPhysics();
+    }
     
     requestAnimationFrame(updateCursor);
   }
@@ -56,44 +75,124 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   /* ==========================================================================
-     2. 3D TILT EFFECT FOR FLOATING CARDS
+     2. PREMIUM 3D LERP PHYSICS FOR FLOATING CARDS
      ========================================================================== */
-  const cards = document.querySelectorAll('.floating-card');
-  
-  cards.forEach(card => {
-    card.addEventListener('mousemove', (e) => {
-      if (card.classList.contains('dragging')) return; // Disable tilt during drag
+  const cardElements = document.querySelectorAll('.floating-card');
+  const cardPhysics = [];
 
-      const rect = card.getBoundingClientRect();
-      const cardWidth = rect.width;
-      const cardHeight = rect.height;
-      
-      // Get mouse position relative to the card's center
-      const mouseXCard = e.clientX - rect.left - cardWidth / 2;
-      const mouseYCard = e.clientY - rect.top - cardHeight / 2;
-      
-      // Calculate rotation degree (max 15 degrees)
-      const maxTilt = 15;
-      const rotateX = -(mouseYCard / (cardHeight / 2)) * maxTilt;
-      const rotateY = (mouseXCard / (cardWidth / 2)) * maxTilt;
-      
-      // Shift card slightly in direction of mouse for perspective
-      const shiftX = (mouseXCard / (cardWidth / 2)) * 6;
-      const shiftY = (mouseYCard / (cardHeight / 2)) * 6;
+  const weights = [
+    { x: 18, y: 12 },   // cardBranding
+    { x: -22, y: 16 },  // cardWebdesign
+    { x: 14, y: -18 },  // cardStrategy
+    { x: -16, y: -12 }  // cardContent
+  ];
 
-      // Apply 3D hardware-accelerated transform
-      card.style.transform = `perspective(800px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translate3d(${shiftX}px, ${shiftY}px, 10px)`;
+  cardElements.forEach((el, index) => {
+    const weight = weights[index] || { x: 15, y: 15 };
+    
+    const record = {
+      element: el,
+      weightX: weight.x,
+      weightY: weight.y,
+      
+      currentDriftX: 0,
+      currentDriftY: 0,
+      currentTiltX: 0,
+      currentTiltY: 0,
+      currentShiftX: 0,
+      currentShiftY: 0,
+      currentLiftZ: 0,
+      
+      targetDriftX: 0,
+      targetDriftY: 0,
+      targetTiltX: 0,
+      targetTiltY: 0,
+      targetShiftX: 0,
+      targetShiftY: 0,
+      targetLiftZ: 0,
+      
+      isHovered: false
+    };
+    
+    cardPhysics.push(record);
+
+    el.addEventListener('mousemove', (e) => {
+      if (el.classList.contains('dragging')) return;
+      
+      record.isHovered = true;
+      const rect = el.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      el.style.setProperty('--mx', `${mx}px`);
+      el.style.setProperty('--my', `${my}px`);
+      
+      const relX = (mx / w) - 0.5;
+      const relY = (my / h) - 0.5;
+      
+      const maxTilt = 12; // Extremely premium, subtle tilt angle
+      record.targetTiltX = -relY * maxTilt;
+      record.targetTiltY = relX * maxTilt;
+      
+      record.targetShiftX = relX * 10;
+      record.targetShiftY = relY * 10;
+      
+      record.targetLiftZ = 20; // Gorgeous translateZ lift
     });
 
-    // Reset card layout smoothly on mouse leave
-    card.addEventListener('mouseleave', () => {
-      card.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) translate3d(0px, 0px, 0px)';
+    el.addEventListener('mouseenter', () => {
+      record.isHovered = true;
+    });
+
+    el.addEventListener('mouseleave', () => {
+      record.isHovered = false;
+      record.targetTiltX = 0;
+      record.targetTiltY = 0;
+      record.targetShiftX = 0;
+      record.targetShiftY = 0;
+      record.targetLiftZ = 0;
     });
   });
+
+  function updateCardPhysics() {
+    const normX = (mouseX / window.innerWidth) - 0.5;
+    const normY = (mouseY / window.innerHeight) - 0.5;
+    
+    cardPhysics.forEach(card => {
+      if (card.element.classList.contains('dragging')) return;
+      
+      card.targetDriftX = normX * card.weightX;
+      card.targetDriftY = normY * card.weightY;
+      
+      // Interpolate drifting
+      card.currentDriftX += (card.targetDriftX - card.currentDriftX) * 0.05;
+      card.currentDriftY += (card.targetDriftY - card.currentDriftY) * 0.05;
+      
+      // Interpolate tilt, shift, and lift
+      card.currentTiltX += (card.targetTiltX - card.currentTiltX) * 0.12;
+      card.currentTiltY += (card.targetTiltY - card.currentTiltY) * 0.12;
+      card.currentShiftX += (card.targetShiftX - card.currentShiftX) * 0.12;
+      card.currentShiftY += (card.targetShiftY - card.currentShiftY) * 0.12;
+      card.currentLiftZ += (card.targetLiftZ - card.currentLiftZ) * 0.12;
+      
+      const tx = card.currentDriftX + card.currentShiftX;
+      const ty = card.currentDriftY + card.currentShiftY;
+      
+      card.element.style.transform = `perspective(1000px) translate3d(${tx}px, ${ty}px, ${card.currentLiftZ}px) rotateX(${card.currentTiltX}deg) rotateY(${card.currentTiltY}deg)`;
+    });
+
+    // Update wires automatically inside the frame loop
+    drawConnectiveWires();
+  }
 
 
   /* ==========================================================================
      3. PHYSICS-BASED MOUSE DRAGGING MODULE
+     ========================================================================== */
+  /* ==========================================================================
+     3. PHYSICS-BASED MOUSE & TOUCH DRAGGING MODULE
      ========================================================================== */
   let activeDragElement = null;
   let dragStartX = 0;
@@ -105,16 +204,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const dragElements = document.querySelectorAll('.hover-draggable');
 
   dragElements.forEach(el => {
-    // Record initial coordinates relative to parent layout on page load
-    const rect = el.getBoundingClientRect();
-    const parentRect = el.parentElement.getBoundingClientRect();
+    // Set absolute positions using offsetLeft/offsetTop so they are completely independent of CSS scale transformations on mobile!
+    const initLeft = el.offsetLeft;
+    const initTop = el.offsetTop;
     
-    // Set absolute positions initially so draggability remains flawless
-    el.style.left = `${rect.left - parentRect.left}px`;
-    el.style.top = `${rect.top - parentRect.top}px`;
+    el.style.left = `${initLeft}px`;
+    el.style.top = `${initTop}px`;
     el.style.position = 'absolute';
     el.style.margin = '0';
 
+    // MOUSE DRAG START
     el.addEventListener('mousedown', (e) => {
       e.preventDefault();
       activeDragElement = el;
@@ -128,25 +227,59 @@ document.addEventListener('DOMContentLoaded', () => {
       document.body.classList.add('hover-draggable');
       
       // Record mouse click offset
-      const elRect = el.getBoundingClientRect();
       dragStartX = e.clientX;
       dragStartY = e.clientY;
-      elementStartX = elRect.left - parentRect.left;
-      elementStartY = elRect.top - parentRect.top;
+      elementStartX = parseInt(el.style.left) || 0;
+      elementStartY = parseInt(el.style.top) || 0;
       
-      // Disable tilt during drag
-      el.style.transform = 'scale(1.05)';
+      // Reset tilt/parallax transform during drag
+      el.style.transform = 'perspective(1000px) translate3d(0px, 0px, 0px) rotateX(0deg) rotateY(0deg)';
     });
+
+    // TOUCH DRAG START (Native mobile feel)
+    el.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches.length > 0) {
+        // e.preventDefault() blocks browser viewport drag-scrolls while dragging card
+        e.preventDefault();
+        activeDragElement = el;
+        
+        // Move to top of stack
+        highestZIndex += 1;
+        el.style.zIndex = highestZIndex;
+        
+        // Add dragging classes
+        el.classList.add('dragging');
+        document.body.classList.add('hover-draggable');
+        
+        const touch = e.touches[0];
+        dragStartX = touch.clientX;
+        dragStartY = touch.clientY;
+        elementStartX = parseInt(el.style.left) || 0;
+        elementStartY = parseInt(el.style.top) || 0;
+        
+        // Reset tilt/parallax transform during drag
+        el.style.transform = 'perspective(1000px) translate3d(0px, 0px, 0px) rotateX(0deg) rotateY(0deg)';
+      }
+    }, { passive: false });
   });
 
+  // MOUSE DRAGGING COORDINATES TRACKER
   document.addEventListener('mousemove', (e) => {
     if (!activeDragElement) return;
     
     const parentRect = document.getElementById('interactiveScene').getBoundingClientRect();
     
+    // Scale drag coordinates dynamically on shrunken viewports to keep drag 1:1 precise
+    let scale = 1;
+    if (window.innerWidth < 480) {
+      scale = 0.55;
+    } else if (window.innerWidth < 768) {
+      scale = 0.8;
+    }
+    
     // Calculate new position
-    const deltaX = e.clientX - dragStartX;
-    const deltaY = e.clientY - dragStartY;
+    const deltaX = (e.clientX - dragStartX) / scale;
+    const deltaY = (e.clientY - dragStartY) / scale;
     let newX = elementStartX + deltaX;
     let newY = elementStartY + deltaY;
     
@@ -165,23 +298,75 @@ document.addEventListener('DOMContentLoaded', () => {
     drawConnectiveWires();
   });
 
-  document.addEventListener('mouseup', () => {
+  // TOUCH DRAGGING COORDINATES TRACKER
+  document.addEventListener('touchmove', (e) => {
+    if (!activeDragElement) return;
+    if (e.touches && e.touches.length > 0) {
+      e.preventDefault(); // Prevent background scroll bounce
+      
+      const parentRect = document.getElementById('interactiveScene').getBoundingClientRect();
+      const touch = e.touches[0];
+      
+      // Scale drag coordinates dynamically on shrunken viewports to keep drag 1:1 precise
+      let scale = 1;
+      if (window.innerWidth < 480) {
+        scale = 0.55;
+      } else if (window.innerWidth < 768) {
+        scale = 0.8;
+      }
+      
+      // Calculate new position
+      const deltaX = (touch.clientX - dragStartX) / scale;
+      const deltaY = (touch.clientY - dragStartY) / scale;
+      let newX = elementStartX + deltaX;
+      let newY = elementStartY + deltaY;
+      
+      // Boundaries setup
+      const elWidth = activeDragElement.offsetWidth;
+      const elHeight = activeDragElement.offsetHeight;
+      
+      // Clamp inside interactive visual container
+      newX = Math.max(-50, Math.min(parentRect.width - elWidth + 50, newX));
+      newY = Math.max(-50, Math.min(parentRect.height - elHeight + 50, newY));
+      
+      activeDragElement.style.left = `${newX}px`;
+      activeDragElement.style.top = `${newY}px`;
+      
+      // Live update wire lines during drag
+      drawConnectiveWires();
+    }
+  }, { passive: false });
+
+  // RESET DRAG FUNCTIONALITY (Unified)
+  const resetDragStates = () => {
     if (!activeDragElement) return;
     
     activeDragElement.classList.remove('dragging');
-    activeDragElement.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) translate3d(0, 0, 0)';
     
-    // Subtle release impact bounce
-    const el = activeDragElement;
-    el.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.5)';
-    el.style.transform = 'scale(1)';
-    
-    setTimeout(() => {
-      el.style.transition = '';
-    }, 400);
+    const record = cardPhysics.find(c => c.element === activeDragElement);
+    if (record) {
+      record.currentDriftX = 0;
+      record.currentDriftY = 0;
+      record.currentTiltX = 0;
+      record.currentTiltY = 0;
+      record.currentShiftX = 0;
+      record.currentShiftY = 0;
+      record.currentLiftZ = 0;
+      
+      record.targetDriftX = 0;
+      record.targetDriftY = 0;
+      record.targetTiltX = 0;
+      record.targetTiltY = 0;
+      record.targetShiftX = 0;
+      record.targetShiftY = 0;
+      record.targetLiftZ = 0;
+    }
 
     activeDragElement = null;
-  });
+  };
+
+  document.addEventListener('mouseup', resetDragStates);
+  document.addEventListener('touchend', resetDragStates);
 
 
   /* ==========================================================================
@@ -369,13 +554,169 @@ document.addEventListener('DOMContentLoaded', () => {
     reelVideo.pause();
   };
 
-  btnWatchReel.addEventListener('click', openReel);
-  btnReelClose.addEventListener('click', closeReel);
+  if (btnWatchReel) {
+    btnWatchReel.addEventListener('click', openReel);
+  }
+  if (btnReelClose) {
+    btnReelClose.addEventListener('click', closeReel);
+  }
   
   reelOverlay.addEventListener('click', (e) => {
     if (e.target === reelOverlay) {
       closeReel();
     }
+  });
+
+
+  /* ==========================================================================
+     8. STICKY HEADER SCROLL DETECTION
+     ========================================================================== */
+  const headerEl = document.querySelector('header');
+  const handleScroll = () => {
+    if (window.scrollY > 20) {
+      headerEl.classList.add('scrolled');
+    } else {
+      headerEl.classList.remove('scrolled');
+    }
+  };
+  window.addEventListener('scroll', handleScroll);
+  handleScroll(); // Initial run on DOM load
+
+
+  /* ==========================================================================
+     9. MOBILE GLASS HAMBURGER NAV OVERLAY HANDLER
+     ========================================================================== */
+  const mobileMenuToggle = document.getElementById('mobileMenuToggle');
+  const mobileMenuOverlay = document.getElementById('mobileMenuOverlay');
+  const mobileMenuClose = document.getElementById('mobileMenuClose');
+  const mobileNavLinks = document.querySelectorAll('.mobile-nav-link');
+
+  const openMobileMenu = () => {
+    if (mobileMenuToggle) mobileMenuToggle.classList.add('active');
+    if (mobileMenuOverlay) mobileMenuOverlay.classList.add('active');
+    document.body.style.overflow = 'hidden'; // Lock background scrolling
+  };
+
+  const closeMobileMenu = () => {
+    if (mobileMenuToggle) mobileMenuToggle.classList.remove('active');
+    if (mobileMenuOverlay) mobileMenuOverlay.classList.remove('active');
+    document.body.style.overflow = ''; // Release background scroll lock
+  };
+
+  if (mobileMenuToggle) {
+    mobileMenuToggle.addEventListener('click', () => {
+      if (mobileMenuOverlay && mobileMenuOverlay.classList.contains('active')) {
+        closeMobileMenu();
+      } else {
+        openMobileMenu();
+      }
+    });
+  }
+
+  if (mobileMenuClose) {
+    mobileMenuClose.addEventListener('click', closeMobileMenu);
+  }
+
+  // Auto-close mobile menu when clicking nav links
+  mobileNavLinks.forEach(link => {
+    link.addEventListener('click', () => {
+      closeMobileMenu();
+    });
+  });
+
+  // Auto-close when clicking on the CTA inside the mobile menu
+  const mobileLetCreate = document.getElementById('mobileLetCreate');
+  if (mobileLetCreate) {
+    mobileLetCreate.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeMobileMenu();
+      if (typeof openOverlay === 'function') {
+        openOverlay(); // Open the premium search overlay
+      }
+    });
+  }
+
+  /* ==========================================================================
+     10. CUSTOM WORK CARD CURSOR HOVER TAGS
+     ========================================================================== */
+  const workCards = document.querySelectorAll('.work-card');
+  workCards.forEach(card => {
+    card.addEventListener('mouseenter', () => {
+      document.body.classList.add('hover-work');
+    });
+    card.addEventListener('mouseleave', () => {
+      document.body.classList.remove('hover-work');
+    });
+  });
+
+  /* ==========================================================================
+     11. BENTO BOX LIGHT COORDINATE TRACKING
+     ========================================================================== */
+  const bentoBoxes = document.querySelectorAll('.bento-box');
+  bentoBoxes.forEach(box => {
+    box.addEventListener('mousemove', (e) => {
+      const rect = box.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      box.style.setProperty('--mx', `${x}px`);
+      box.style.setProperty('--my', `${y}px`);
+    });
+  });
+
+  /* ==========================================================================
+     12. PREMIUM SMOOTH SCROLLING WITH STICKY HEADER OFFSET
+     ========================================================================== */
+  const internalLinks = document.querySelectorAll('a[href^="#"]');
+  internalLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+      const targetId = link.getAttribute('href');
+      if (targetId === '#' || !targetId) return;
+      
+      // Skip tags that trigger overlays/modals
+      if (link.id === 'btnLetCreate' || link.id === 'btnExploreWork' || link.id === 'mobileLetCreate') {
+        return;
+      }
+      
+      const targetEl = document.querySelector(targetId);
+      if (targetEl) {
+        e.preventDefault();
+        
+        // Dynamic header height reading
+        const header = document.querySelector('header');
+        const headerHeight = header ? header.offsetHeight : 80;
+        
+        const targetPosition = targetEl.getBoundingClientRect().top + window.scrollY;
+        const offsetPosition = targetPosition - headerHeight - 16;
+        
+        window.scrollTo({
+          top: offsetPosition,
+          behavior: 'smooth'
+        });
+      }
+    });
+  });
+
+  /* ==========================================================================
+     13. INTERSECTION OBSERVER FOR HIGH-END SCROLL REVEALS
+     ========================================================================== */
+  const revealElements = document.querySelectorAll(
+    '.work-card, .bento-box, .process-step, .insight-card, .studio-copy-container, .studio-cards-container, .contact-split, .section-title, .section-badge'
+  );
+  
+  const revealObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('in-view');
+        observer.unobserve(entry.target); // Trigger once per load
+      }
+    });
+  }, {
+    threshold: 0.12,
+    rootMargin: '0px 0px -40px 0px'
+  });
+  
+  revealElements.forEach(el => {
+    revealObserver.observe(el);
   });
 
 });
