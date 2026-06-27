@@ -41,10 +41,32 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('touchstart', handleTouch, { passive: true });
   document.addEventListener('touchmove', handleTouch, { passive: true });
 
+  let activeMagnetic = null;
+
   // Smoothly interpolate the outer cursor ring position
   function updateCursor() {
-    ringX += (mouseX - ringX) * lerpFactor;
-    ringY += (mouseY - ringY) * lerpFactor;
+    let targetX = mouseX;
+    let targetY = mouseY;
+
+    if (activeMagnetic) {
+      document.body.classList.add('hover-magnetic');
+      const rect = activeMagnetic.getBoundingClientRect();
+      targetX = rect.left + rect.width / 2;
+      targetY = rect.top + rect.height / 2;
+      
+      const style = window.getComputedStyle(activeMagnetic);
+      cursorRing.style.width = `${rect.width + 16}px`;
+      cursorRing.style.height = `${rect.height + 16}px`;
+      cursorRing.style.borderRadius = style.borderRadius;
+    } else {
+      document.body.classList.remove('hover-magnetic');
+      cursorRing.style.width = '';
+      cursorRing.style.height = '';
+      cursorRing.style.borderRadius = '';
+    }
+
+    ringX += (targetX - ringX) * lerpFactor;
+    ringY += (targetY - ringY) * lerpFactor;
     
     cursorRing.style.left = `${ringX}px`;
     cursorRing.style.top = `${ringY}px`;
@@ -57,12 +79,37 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   requestAnimationFrame(updateCursor);
 
-  // Add hover state classes to body for interactive elements
+  // Add hover state classes and magnetic pull for interactive elements
   const setupHoverEffects = () => {
     const clickables = document.querySelectorAll('a, button, .play-button, .tag-btn, .overlay-close');
     clickables.forEach(el => {
-      el.addEventListener('mouseenter', () => document.body.classList.add('hover-clickable'));
-      el.addEventListener('mouseleave', () => document.body.classList.remove('hover-clickable'));
+      el.addEventListener('mouseenter', () => {
+        document.body.classList.add('hover-clickable');
+        activeMagnetic = el;
+      });
+      
+      el.addEventListener('mousemove', (e) => {
+        if (activeMagnetic === el) {
+          const rect = el.getBoundingClientRect();
+          const elCenterX = rect.left + rect.width / 2;
+          const elCenterY = rect.top + rect.height / 2;
+          const deltaX = e.clientX - elCenterX;
+          const deltaY = e.clientY - elCenterY;
+          
+          // Gentle magnetic pull on the actual button/link element (max translation)
+          const pullX = deltaX * 0.22;
+          const pullY = deltaY * 0.22;
+          el.style.transform = `translate(${pullX}px, ${pullY}px)`;
+        }
+      });
+
+      el.addEventListener('mouseleave', () => {
+        document.body.classList.remove('hover-clickable');
+        el.style.transform = '';
+        if (activeMagnetic === el) {
+          activeMagnetic = null;
+        }
+      });
     });
 
     const draggables = document.querySelectorAll('.hover-draggable');
@@ -409,7 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const dAttr = `M ${portalCenterX} ${portalCenterY} C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${elCenterX} ${elCenterY}`;
       
       path.setAttribute('d', dAttr);
-      path.setAttribute('stroke', '#ffb800');
+      path.setAttribute('stroke', '#F4C400');
       path.setAttribute('stroke-width', '1.5');
       path.setAttribute('stroke-dasharray', '4, 4');
       path.setAttribute('fill', 'none');
@@ -505,9 +552,9 @@ document.addEventListener('DOMContentLoaded', () => {
       overlaySearchInput.focus();
       
       // Dynamic color flash on selection
-      btn.style.background = '#ffb800';
-      btn.style.color = '#0c0c0c';
-      btn.style.borderColor = '#ffb800';
+      btn.style.background = 'var(--accent-gold)';
+      btn.style.color = 'var(--text-dark)';
+      btn.style.borderColor = 'var(--accent-gold)';
       
       setTimeout(() => {
         btn.style.background = '';
